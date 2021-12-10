@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use std::sync::{Arc, RwLock};
 use std::io;
 use std::io::prelude::*;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use futures::{future, StreamExt, TryStreamExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -28,10 +29,40 @@ async fn accept_connection(stream: TcpStream) {
         .expect("failed to forward message");
 }
 
+async fn main_loop(listener: TcpListener) {
+    println!("Ctrl-C to exit");
+    while let Ok((stream, addr)) = listener.accept().await {
+       println!("socket address: {}", addr);
+       tokio::spawn(accept_connection(stream));
+
+    }
+}
+
+async fn exit_signal() {
+    tokio::signal::ctrl_c().await.expect("signal error");
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    
-    /*
+
+     // Create the event loop and TCP listener we'll accept connections on.
+    let listener = TcpListener::bind("127.0.0.1:8080").await.expect("can't listen");
+
+    tokio::select! {
+        _ = main_loop(listener) => {
+            println!("Server exiting");
+        }
+
+        _ = exit_signal() => {
+            println!("Got it... exiting");
+        }
+    }
+
+    Ok(())
+}
+
+
+/*
     println!("Test input");
 
     let stdin = io::stdin();
@@ -46,14 +77,3 @@ async fn main() -> Result<()> {
         }
     }
     */
-
-     // Create the event loop and TCP listener we'll accept connections on.
-     let listener = TcpListener::bind("127.0.0.1:8080").await.expect("can't listen");
-
-     while let Ok((stream, addr)) = listener.accept().await {
-         println!("socket address: {}", addr);
-        tokio::spawn(accept_connection(stream));
-     }
-
-    Ok(())
-}
