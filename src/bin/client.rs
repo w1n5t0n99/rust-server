@@ -16,13 +16,21 @@ async fn read_stdin(tx: futures::channel::mpsc::UnboundedSender<Message>) {
     }
 }
 
+async fn exit_signal() {
+    tokio::signal::ctrl_c().await.expect("signal error");
+}
+
 #[tokio::main]
 async fn main() {
    
     let (stdin_tx, stdin_rx) = futures::channel::mpsc::unbounded();
     tokio::spawn(read_stdin(stdin_tx));
 
-    let (ws_stream, _) = connect_async("127.0.0.1:8080").await.expect("failed to connect");
+    let url = url::Url::parse("ws:////127.0.0.1:8080").unwrap();
+
+    println!("server url: {}", url);
+
+    let (ws_stream, _) = connect_async(url).await.expect("failed to connect");
     println!("websocket handshake successfully completed");
 
     let (write, read) = ws_stream.split();
@@ -30,8 +38,9 @@ async fn main() {
     let stdin_to_ws = stdin_rx.map(|m| Ok(m)).forward(write);
     let ws_to_stdout = {
         read.for_each(|message| async {
-            let data = message.unwrap().into_data();
-            tokio::io::stdout().write_all(&data).await.unwrap();
+            let data = message.unwrap().into_text().unwrap();
+            let output_msg = format!("server: {}", data);
+            tokio::io::stdout().write_all(output_msg.as_bytes()).await.unwrap();
         })
     };
 
