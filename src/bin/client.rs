@@ -24,7 +24,15 @@ async fn read_stdin(tx: futures::channel::mpsc::UnboundedSender<Message>) {
 }
 
 async fn stdin_to_ws(write: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>, stdin_rx: UnboundedReceiver<Message>) {
-    stdin_rx.map(|m| Ok(m)).forward(write);
+    let res = stdin_rx
+        .map(|m| Ok(m))
+        .forward(write)
+        .await;
+
+    match res {
+        Ok(_) => { }
+        Err(_) => { println!("error sending input to server"); }
+    }
 }
 
 async fn ws_to_stdout(read: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>) {
@@ -38,7 +46,7 @@ async fn ws_to_stdout(read: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream
                 println!("error reading message");
             }
         }
-    });
+    }).await;
 }
 
 async fn exit_signal(tx: broadcast::Sender<u8>) {
@@ -51,24 +59,15 @@ async fn main() -> Result<()> {
    
     let (stdin_tx, stdin_rx) = futures::channel::mpsc::unbounded();
     let (tx, mut rx1) = broadcast::channel::<u8>(16);
-    //let mut rx2 = tx.subscribe();
-
-   // tokio::spawn(read_stdin(stdin_tx.clone()));
-
-    tokio::select! {
-        _ = read_stdin(stdin_tx.clone()) => { }
-        _ = rx1.recv() => { }
-    };
+    //let mut rx2 = tx.subscribe();    
 
     let url = url::Url::parse("ws:////127.0.0.1:8080").unwrap();
-
     println!("server url: {}", url);
 
     let (ws_stream, _) = connect_async(url).await.expect("failed to connect");
     println!("websocket handshake successfully completed");
 
     let (write, read) = ws_stream.split();
-
 
     //pin_mut!(stdin_to_ws, ws_to_stdout);
     //future::select(stdin_to_ws, ws_to_stdout).await;
@@ -78,9 +77,9 @@ async fn main() -> Result<()> {
 
         _ = ws_to_stdout(read) => {  println!("client output exiting"); }
 
-        _ = exit_signal(tx) => {
-            println!("Got it... exiting");
-        }
+        _ = read_stdin(stdin_tx.clone()) => { }
+
+        _ = exit_signal(tx) => { println!("Got it... exiting"); }
     }
 
     Ok(())
