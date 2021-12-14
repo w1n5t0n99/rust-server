@@ -3,6 +3,8 @@ use futures::{future, StreamExt, TryStreamExt, pin_mut};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
+use anyhow::Result;
+
 async fn read_stdin(tx: futures::channel::mpsc::UnboundedSender<Message>) {
     let mut stdin = tokio::io::stdin();
     loop {
@@ -16,15 +18,16 @@ async fn read_stdin(tx: futures::channel::mpsc::UnboundedSender<Message>) {
     }
 }
 
-async fn exit_signal() {
+async fn exit_signal(tx: futures::channel::mpsc::UnboundedSender<Message>) {
     tokio::signal::ctrl_c().await.expect("signal error");
+    tx.unbounded_send(Message::Close(None)).unwrap();
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
    
     let (stdin_tx, stdin_rx) = futures::channel::mpsc::unbounded();
-    tokio::spawn(read_stdin(stdin_tx));
+    tokio::spawn(read_stdin(stdin_tx.clone()));
 
     let url = url::Url::parse("ws:////127.0.0.1:8080").unwrap();
 
@@ -36,6 +39,7 @@ async fn main() {
     let (write, read) = ws_stream.split();
 
     let stdin_to_ws = stdin_rx.map(|m| Ok(m)).forward(write);
+
     let ws_to_stdout = {
         read.for_each(|message| async {
             let data = message.unwrap().into_text().unwrap();
@@ -44,7 +48,18 @@ async fn main() {
         })
     };
 
-    pin_mut!(stdin_to_ws, ws_to_stdout);
-    future::select(stdin_to_ws, ws_to_stdout).await;
+    //pin_mut!(stdin_to_ws, ws_to_stdout);
+    //future::select(stdin_to_ws, ws_to_stdout).await;
     
+    tokio::select! {
+        _ = stdin_to_ws => {  println!("client input exiting"); }
+
+        _ = ws_to_stdout => {  println!("client output exiting"); }
+
+        _ = exit_signal(stdin_tx.clone()) => {
+            println!("Got it... exiting");
+        }
+    }
+
+    Ok(())
 }

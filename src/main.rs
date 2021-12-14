@@ -23,10 +23,24 @@ async fn accept_connection(stream: TcpStream) {
 
     let (write, read) = ws_stream.split();
     // we should not forward messages other than text or binary
-    read.try_filter(|msg| future::ready(msg.is_text() || msg.is_binary()))
+    let res = read.try_filter(|msg| future::ready(msg.is_text() || msg.is_binary()))
+        .then(|msg| {
+            future::ready(msg.and_then(|m| { println!("message from {}: {}", addr, m); Ok(m) }))
+        })
         .forward(write)
-        .await
-        .expect("failed to forward message");
+        .await;
+
+    match res {
+        Ok(_) => {
+            println!("connection closed {}: no error", addr);
+        }
+        Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed) => {
+            println!("connection closed {}: no error", addr);
+        }
+        Err(_) => {
+            println!("connection closed {}: ERROR", addr);
+        }
+    }
 }
 
 async fn main_loop(listener: TcpListener) {
