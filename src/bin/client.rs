@@ -3,8 +3,8 @@ use futures::{future, StreamExt, TryStreamExt, pin_mut};
 use futures::stream::{SplitSink, SplitStream};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::{broadcast};
-use tokio::sync::mpsc::{channel, Sender};
+use tokio::sync::{broadcast, mpsc};
+//use tokio::sync::mpsc::{channel, Sender};
 use tokio::net::TcpStream;
 
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message, WebSocketStream, MaybeTlsStream};
@@ -99,6 +99,7 @@ async fn ws_to_stdout(read: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream
     println!("ws_to_stdout ended");
 }
 
+/*
 async fn wts(read: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>, mut shutdown: shutdown::Shutdown, _sender: Sender<()>) {
     tokio::select! {
         _ = ws_to_stdout(read) => { }
@@ -112,6 +113,7 @@ async fn exit_signal(tx: broadcast::Sender<()>, _sender: Sender<()>) {
     tx.send(()).unwrap();
     println!("exit signal ended");
 }
+*/
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -147,7 +149,5 @@ async fn main() -> Result<()> {
 
     */
     
-=======
->>>>>>> f11763be46d99bb0c5a24d5855339c37cb2d5d2d
     Ok(())
 }
