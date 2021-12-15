@@ -1,5 +1,3 @@
-pub mod types;
-
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::time::{Duration, Instant};
@@ -12,6 +10,8 @@ use futures::{future, StreamExt, TryStreamExt};
 use tokio::net::{TcpListener, TcpStream};
 
 use anyhow::Result;
+
+use rust_server::shutdown; 
 
 async fn accept_connection(stream: TcpStream) {
     let addr = stream.peer_addr().expect("connected streams should have a peer address");
@@ -34,11 +34,8 @@ async fn accept_connection(stream: TcpStream) {
         Ok(_) => {
             println!("connection closed {}: no error", addr);
         }
-        Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed) => {
-            println!("connection closed {}: no error", addr);
-        }
-        Err(_) => {
-            println!("connection closed {}: ERROR", addr);
+        Err(err) => {
+            println!("connection closed {}: ERROR - {}", addr, err);
         }
     }
 }
