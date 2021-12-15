@@ -1,5 +1,4 @@
 use std::net::Shutdown;
-use futures::channel::mpsc::UnboundedReceiver;
 use futures::{future, StreamExt, TryStreamExt, pin_mut};
 use futures::stream::{SplitSink, SplitStream};
 
@@ -13,6 +12,7 @@ use anyhow::Result;
 
 use rust_server::shutdown;
 
+/*
 async fn read_stdin(tx: futures::channel::mpsc::UnboundedSender<Message>) {
     let mut stdin = tokio::io::stdin();
     
@@ -39,6 +39,29 @@ async fn stdin_to_ws(write: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>
     match res {
         Ok(_) => { }
         Err(_) => { println!("error sending input to server"); }
+    }
+}
+*/
+
+async fn read_stdin(tx: mpsc::Sender<String>) {
+    let mut stdin = tokio::io::stdin();
+
+    loop {
+        let mut buf = vec![0; 1024];
+
+        let n = match stdin.read(&mut buf).await {
+            Err(_) | Ok(0) => break,
+            Ok(n) => n,
+        };
+
+        buf.truncate(n);
+        //tx.send(Message::binary(buf)).await.expect("send message error");
+        let msg = match String::from_utf8(buf) {
+            Ok(msg) => msg,
+            Err(_) => "ERROR: message could not be parsed".to_string(),
+        };
+
+        tx.send(msg).await.expect("send message error");
     }
 }
 
@@ -72,6 +95,7 @@ async fn exit_signal(tx: broadcast::Sender<()>) {
 #[tokio::main]
 async fn main() -> Result<()> {
    
+    /*
     let (stdin_tx, stdin_rx) = futures::channel::mpsc::unbounded();
 
     let (tx, _rx1) = broadcast::channel(16);
@@ -103,6 +127,8 @@ async fn main() -> Result<()> {
 
         _ = shutdown2.recv() => { println!("read_stdin shutting down");  }
     }
+
+    */
     
     Ok(())
 }
