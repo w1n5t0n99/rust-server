@@ -83,6 +83,18 @@ async fn read_stdin(tx: mpsc::Sender<String>) {
     }
 }
 
+async fn write_stdout(mut rx: mpsc::Receiver<String>) {
+    while let Some(msg) = rx.recv().await {
+        let msg = format!("output: {}", msg);
+
+        match tokio::io::stdout().write_all(msg.as_bytes()).await {
+            Ok(_) => { },
+            Err(_) => { println!("ERROR: could not write message to stdout") },
+        }
+    }
+}
+
+/*
 async fn ws_to_stdout(read: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>) {
     read.for_each(|message| async {
         match message {
@@ -98,6 +110,9 @@ async fn ws_to_stdout(read: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream
 
     println!("ws_to_stdout ended");
 }
+*/
+
+
 
 /*
 async fn wts(read: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>, mut shutdown: shutdown::Shutdown, _sender: Sender<()>) {
@@ -148,6 +163,40 @@ async fn main() -> Result<()> {
     }
 
     */
+
+    println!("Ctrl+C to exit");
+
+    //let (tx, rx) = mpsc::channel(64);
+    let (tx, rx) = std::sync::mpsc::channel();
+
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => { println!("shutting down"); },
+        //_ = read_stdin(tx) => { println!("read_stdin shutting down"); },
+        //_ = write_stdout(rx) => { println!("write_stdout shutting down"); },
+    }
     
     Ok(())
 }
+
+/*
+    let stdin_channel = spawn_stdin_channel();
+    loop {
+        match stdin_channel.try_recv() {
+            Ok(key) => println!("Received: {}", key),
+            Err(TryRecvError::Empty) => println!("Channel empty"),
+            Err(TryRecvError::Disconnected) => panic!("Channel disconnected"),
+        }
+        sleep(1000);
+    }
+}
+
+fn spawn_stdin_channel() -> Receiver<String> {
+    let (tx, rx) = mpsc::channel::<String>();
+    thread::spawn(move || loop {
+        let mut buffer = String::new();
+        io::stdin().read_line(&mut buffer).unwrap();
+        tx.send(buffer).unwrap();
+    });
+    rx
+}
+ */
