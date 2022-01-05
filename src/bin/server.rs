@@ -1,18 +1,11 @@
 use std::collections::HashMap;
-use std::fmt::Debug;
-use std::hash::Hash;
-use std::time::{Duration, Instant};
+use std::os::windows::process;
 use std::sync::{Arc, RwLock};
-use std::io;
-use std::io::prelude::*;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use futures::{future, StreamExt, TryStreamExt};
 use tokio::net::{TcpListener, TcpStream};
 
 use anyhow::Result;
-
-use rust_server::shutdown; 
 
 
 /*
@@ -51,20 +44,30 @@ async fn main_loop(listener: TcpListener) {
 
     }
 }
-
 */
+
+async fn process_socket(socket: TcpStream) {
+    let ws_stream = tokio_tungstenite::accept_async(socket)
+        .await
+        .expect("error during websocket handshake occurred"); // TODO perform better error handling
+
+    let (write, read) = ws_stream.split();
+
+    
+    
+}
 
 async fn exit_signal() {
     tokio::signal::ctrl_c().await.expect("signal error");
 }
 
-async fn connection_handler(listener: TcpListener) -> Result<()> {
+async fn connection_handler(listener: TcpListener) {
     loop {
-        let (socket, addr) = listener.accept().await?;
-
+        match listener.accept().await {
+            Ok((socket, _addr)) => { tokio::spawn( process_socket(socket)); },
+            Err(e) => println!("couldn't get client: {:?}", e),
+        }
     }
-
-    Ok(())
 }
 
 #[tokio::main]
@@ -75,13 +78,13 @@ async fn main() -> Result<()> {
 
     // Hashmap to store a sink value with an id key
     // A sink is used to send data to an open client connection
-    let connections = Arc::new(RwLock::new(HashMap::new()));
+    //let connections = Arc::new(RwLock::new(HashMap::new()));
     // Hashmap of id:entity pairs. This is basically the game state
-    let entities = Arc::new(RwLock::new(HashMap::new()));
+    //let entities = Arc::new(RwLock::new(HashMap::new()));
     // Used to assign a unique id to each new player
     let counter = Arc::new(RwLock::new(0));
 
-
+    
     tokio::select! {
         _ = connection_handler(server_listener) => {
             println!("Server exiting");
@@ -91,6 +94,9 @@ async fn main() -> Result<()> {
             println!("Got it... exiting");
         }
     }
+    
+
+
 
     Ok(())
 }

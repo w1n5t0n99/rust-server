@@ -167,7 +167,7 @@ async fn main() -> Result<()> {
     println!("Ctrl+C to exit");
 
     //let (tx, rx) = mpsc::channel(64);
-    let (tx, rx) = std::sync::mpsc::channel();
+    //let (tx, rx) = std::sync::mpsc::channel();
 
     tokio::select! {
         _ = tokio::signal::ctrl_c() => { println!("shutting down"); },
