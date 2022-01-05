@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::hash::Hash;
 use std::time::{Duration, Instant};
 use std::sync::{Arc, RwLock};
 use std::io;
@@ -13,6 +14,8 @@ use anyhow::Result;
 
 use rust_server::shutdown; 
 
+
+/*
 async fn accept_connection(stream: TcpStream) {
     let addr = stream.peer_addr().expect("connected streams should have a peer address");
     println!("{}", addr);
@@ -49,18 +52,38 @@ async fn main_loop(listener: TcpListener) {
     }
 }
 
+*/
+
 async fn exit_signal() {
     tokio::signal::ctrl_c().await.expect("signal error");
+}
+
+async fn connection_handler(listener: TcpListener) -> Result<()> {
+    loop {
+        let (socket, addr) = listener.accept().await?;
+
+    }
+
+    Ok(())
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
 
      // Create the event loop and TCP listener we'll accept connections on.
-    let listener = TcpListener::bind("127.0.0.1:8080").await.expect("can't listen");
+    let server_listener = TcpListener::bind("127.0.0.1:8080").await?;
+
+    // Hashmap to store a sink value with an id key
+    // A sink is used to send data to an open client connection
+    let connections = Arc::new(RwLock::new(HashMap::new()));
+    // Hashmap of id:entity pairs. This is basically the game state
+    let entities = Arc::new(RwLock::new(HashMap::new()));
+    // Used to assign a unique id to each new player
+    let counter = Arc::new(RwLock::new(0));
+
 
     tokio::select! {
-        _ = main_loop(listener) => {
+        _ = connection_handler(server_listener) => {
             println!("Server exiting");
         }
 
