@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::os::windows::process;
+use std::str::EncodeUtf16;
 use std::sync::{Arc, RwLock};
 
 use futures::{future, StreamExt, TryStreamExt};
@@ -7,54 +8,43 @@ use tokio::net::{TcpListener, TcpStream};
 
 use anyhow::Result;
 
+pub struct EntityCounter {
+    counter: u32,
+}
 
-/*
-async fn accept_connection(stream: TcpStream) {
-    let addr = stream.peer_addr().expect("connected streams should have a peer address");
-    println!("{}", addr);
+impl EntityCounter {
+    pub fn new() -> Self { EntityCounter{ counter: 0 } }
 
-    let ws_stream = tokio_tungstenite::accept_async(stream)
-        .await
-        .expect("error during websocket handshake occurred");
+    pub fn next(&mut self) -> u32 {
+        let cur = self.counter;
+        self.counter += 1;
+        cur
+    }
+}
+
+async fn process_socket(socket: TcpStream) -> Result<()> {
+    let ws_stream = tokio_tungstenite::accept_async(socket)
+        .await?;
 
     let (write, read) = ws_stream.split();
-    // we should not forward messages other than text or binary
+
     let res = read.try_filter(|msg| future::ready(msg.is_text() || msg.is_binary()))
         .then(|msg| {
-            future::ready(msg.and_then(|m| { println!("message from {}: {}", addr, m); Ok(m) }))
+            future::ready(msg.and_then(|m| { println!("message: {}", m); Ok(m) }))
         })
         .forward(write)
         .await;
-
+    
     match res {
         Ok(_) => {
-            println!("connection closed {}: no error", addr);
+            println!("connection closed: no error");
+            Ok(())
         }
         Err(err) => {
-            println!("connection closed {}: ERROR - {}", addr, err);
+            println!("connection closed: ERROR - {}", err);
+            Err(err.into())
         }
     }
-}
-
-async fn main_loop(listener: TcpListener) {
-    println!("Ctrl-C to exit");
-    while let Ok((stream, addr)) = listener.accept().await {
-       println!("socket address: {}", addr);
-       tokio::spawn(accept_connection(stream));
-
-    }
-}
-*/
-
-async fn process_socket(socket: TcpStream) {
-    let ws_stream = tokio_tungstenite::accept_async(socket)
-        .await
-        .expect("error during websocket handshake occurred"); // TODO perform better error handling
-
-    let (write, read) = ws_stream.split();
-
-    
-    
 }
 
 async fn exit_signal() {
@@ -82,7 +72,7 @@ async fn main() -> Result<()> {
     // Hashmap of id:entity pairs. This is basically the game state
     //let entities = Arc::new(RwLock::new(HashMap::new()));
     // Used to assign a unique id to each new player
-    let counter = Arc::new(RwLock::new(0));
+    let counter = Arc::new(RwLock::new(EntityCounter::new()));
 
     
     tokio::select! {
@@ -101,19 +91,3 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-
-/*
-    println!("Test input");
-
-    let stdin = io::stdin();
-    for line in stdin.lock().lines() {
-        let line = line.unwrap();
-        println!("Output: {}", line);
-
-
-
-        if line.to_lowercase() == "exit" {
-            break;
-        }
-    }
-    */
