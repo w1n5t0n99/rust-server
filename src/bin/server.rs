@@ -97,3 +97,38 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_event_serialization() {
+        let e = Event::Chat("hello world".to_string());
+        let e_json = serde_json::to_string(&e).unwrap();
+        let msg = Message::Text(e_json);
+
+        let msg1 = msg.clone();
+        
+        match msg1 {
+            Message::Text(txt) => {
+                let e1: Event = serde_json::from_str(txt.as_str()).unwrap();
+                match e1 {
+                    Event::Chat(c) => {
+                        assert_eq!(c, "hello world");
+                    }
+
+                    _ => {
+                        panic!("event serialization failed");                        
+                    }
+                }
+
+            }
+
+            _ => {
+                panic!("event serialization failed");   
+             }
+        }
+
+    }
+}
+
