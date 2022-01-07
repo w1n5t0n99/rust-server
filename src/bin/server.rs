@@ -2,20 +2,41 @@ use std::collections::HashMap;
 use std::os::windows::process;
 use std::str::EncodeUtf16;
 use std::sync::{Arc, RwLock, Mutex};
+use futures::sink::SinkExt;
 use futures::{future, StreamExt, TryStreamExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio_tungstenite::tungstenite::Message;
+use serde::{Serialize, Deserialize};
+
 use anyhow::Result;
 
-use rust_server::types::{EntityCounter, Entities, Entity, Counter};
+use rust_server::types::{EntityCounter, Entities, Entity, Counter, Event};
 
 //===============================================================
 
-async fn process_socket(socket: TcpStream) -> Result<()> {
+fn process_event(msg: Message) -> Result<Event> {
+    match msg {
+        Message::Text(txt) => {
+            let event: Event = serde_json::from_str(&txt)?;
+            Ok(event)
+        }
+        _ => Err(tokio_tungstenite::tungstenite::Error::Utf8.into())
+    }
+}
+
+async fn process_socket(socket: TcpStream, counter: EntityCounter) -> Result<()> {
     let ws_stream = tokio_tungstenite::accept_async(socket)
         .await?;
 
-    let (write, read) = ws_stream.split();
+    let (mut write, read) = ws_stream.split();
 
+    // register client
+    let reg_event = Event::ClientRegistered(counter.lock().unwrap().next());
+    let reg_event_json = serde_json::to_string(&reg_event).unwrap();
+    
+    write.send(Message::Text(reg_event_json)).await?;
+
+    // loop update client
     let res = read.try_filter(|msg| future::ready(msg.is_text() || msg.is_binary()))
         .then(|msg| {
             future::ready(msg.and_then(|m| { println!("message: {}", m); Ok(m) }))
@@ -39,10 +60,10 @@ async fn exit_signal() {
     tokio::signal::ctrl_c().await.expect("signal error");
 }
 
-async fn connection_handler(listener: TcpListener) {
+async fn connection_handler(listener: TcpListener, counter: EntityCounter) {
     loop {
         match listener.accept().await {
-            Ok((socket, _addr)) => { tokio::spawn( process_socket(socket)); },
+            Ok((socket, _addr)) => { tokio::spawn( process_socket(socket, counter.clone())); },
             Err(e) => println!("couldn't get client: {:?}", e),
         }
     }
@@ -64,7 +85,7 @@ async fn main() -> Result<()> {
 
 
     tokio::select! {
-        _ = connection_handler(server_listener) => {
+        _ = connection_handler(server_listener, counter.clone()) => {
             println!("Server exiting");
         }
 

@@ -24,5 +24,12 @@ pub struct Entity {
     pub pos: (i32, i32),
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub enum Event {
+    ClientRegistered(u32),
+    UpdateEntities,
+    Chat(String),
+}
+
 pub type Entities = Arc<Mutex<HashMap<u32, Entity>>>;
 pub type EntityCounter = Arc<Mutex<Counter>>;
