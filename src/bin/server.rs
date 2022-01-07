@@ -1,26 +1,14 @@
 use std::collections::HashMap;
 use std::os::windows::process;
 use std::str::EncodeUtf16;
-use std::sync::{Arc, RwLock};
-
+use std::sync::{Arc, RwLock, Mutex};
 use futures::{future, StreamExt, TryStreamExt};
 use tokio::net::{TcpListener, TcpStream};
-
 use anyhow::Result;
 
-pub struct EntityCounter {
-    counter: u32,
-}
+use rust_server::types::{EntityCounter, Entities, Entity, Counter};
 
-impl EntityCounter {
-    pub fn new() -> Self { EntityCounter{ counter: 0 } }
-
-    pub fn next(&mut self) -> u32 {
-        let cur = self.counter;
-        self.counter += 1;
-        cur
-    }
-}
+//===============================================================
 
 async fn process_socket(socket: TcpStream) -> Result<()> {
     let ws_stream = tokio_tungstenite::accept_async(socket)
@@ -70,11 +58,11 @@ async fn main() -> Result<()> {
     // A sink is used to send data to an open client connection
     //let connections = Arc::new(RwLock::new(HashMap::new()));
     // Hashmap of id:entity pairs. This is basically the game state
-    //let entities = Arc::new(RwLock::new(HashMap::new()));
+    let entities: Arc<Mutex<HashMap<u32, Entity>>> = Arc::new(Mutex::new(HashMap::new()));
     // Used to assign a unique id to each new player
-    let counter = Arc::new(RwLock::new(EntityCounter::new()));
+    let counter = Arc::new(Mutex::new(Counter::new()));
 
-    
+
     tokio::select! {
         _ = connection_handler(server_listener) => {
             println!("Server exiting");
@@ -85,9 +73,6 @@ async fn main() -> Result<()> {
         }
     }
     
-
-
-
     Ok(())
 }
 

@@ -1,6 +1,22 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+#[derive(Debug)]
+pub struct Counter {
+    counter: u32,
+}
+
+impl Counter {
+    pub fn new() -> Self { Counter{ counter: 0 } }
+
+    pub fn next(&mut self) -> u32 {
+        let cur = self.counter;
+        self.counter += 1;
+        cur
+    }
+}
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Entity {
@@ -8,4 +24,5 @@ pub struct Entity {
     pub pos: (i32, i32),
 }
 
-pub type Entities = HashMap<u32, Entity>;
+pub type Entities = Arc<Mutex<HashMap<u32, Entity>>>;
+pub type EntityCounter = Arc<Mutex<Counter>>;
