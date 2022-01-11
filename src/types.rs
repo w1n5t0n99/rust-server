@@ -32,4 +32,5 @@ pub enum Event {
 }
 
 pub type Entities = Arc<Mutex<HashMap<u32, Entity>>>;
+pub type EntitiesVec = Arc<Mutex<Vec<Entity>>>;
 pub type EntityCounter = Arc<Mutex<Counter>>;
