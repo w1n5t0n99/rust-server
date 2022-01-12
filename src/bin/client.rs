@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+use std::thread::sleep;
 use futures::channel::mpsc::{UnboundedReceiver};
 use futures::{future, StreamExt, TryStreamExt, pin_mut};
 use futures::stream::{SplitSink, SplitStream};
@@ -66,7 +68,7 @@ async fn exit_signal() {
     tokio::signal::ctrl_c().await.expect("signal error");
 }
 
-fn window_loop(event_sx: std::sync::mpsc::Sender<Event>, entities: EntitiesVec) {
+fn window_loop() {
     let mut buffer: Vec<u32> = vec![0; WIDTH * HEIGHT];
 
     let mut window = Window::new(
@@ -94,33 +96,54 @@ fn window_loop(event_sx: std::sync::mpsc::Sender<Event>, entities: EntitiesVec) 
     }
 }
 
+fn render_loop() {
+    let mut buffer: Vec<u32> = vec![0; WIDTH * HEIGHT];
+    let now = Instant::now();
+    let dur = Duration::from_millis(32);
+
+    for y in 75..100 {
+        for x in 275..300 {
+            buffer[(y * WIDTH) + x] = 0xFF000000;
+        }
+    }
+
+    if now.elapsed() >= dur {
+        
+    }
+    else {
+
+    }
+
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
    
-    let (stdin_tx, stdin_rx) = futures::channel::mpsc::unbounded();
-    let (window_channel_tx, window_channel_rx) = std::sync::mpsc::channel();
-    let entities: EntitiesVec = Arc::new(Mutex::new(Vec::new()));
-
+    let window_buffer: Arc<Mutex<Vec<u32>>> = Arc::new(Mutex::new(vec![0; WIDTH * HEIGHT]));
     // initialize window thread
-    {
-        let wtx = window_channel_tx.clone();
-        let ev = Arc::clone(&entities);
-        std::thread::spawn(move || window_loop(wtx, ev));
-    }
+    let window_handle = std::thread::spawn(move || window_loop());
 
     let url = url::Url::parse("ws:////127.0.0.1:8080").unwrap();
     println!("server url: {}", url);
 
-    let (ws_stream, _) = connect_async(url).await.expect("failed to connect");
-    println!("websocket handshake successfully completed");
-    let (write, read) = ws_stream.split();
-  
-    tokio::select! {
-        _ = read_stdin(stdin_tx) => { }
-        _ = stdin_to_ws(write, stdin_rx) => { }
-        _ = ws_to_stdout(read) => { }
-        _ = exit_signal() => { println!("exiting");  }
+    if let Ok((ws_stream, _)) = connect_async(url).await {
+        println!("websocket handshake successfully completed");
+        let (write, read) = ws_stream.split();
+        
+        let (stdin_tx, stdin_rx) = futures::channel::mpsc::unbounded();
+
+        tokio::select! {
+            _ = read_stdin(stdin_tx) => { }
+            _ = stdin_to_ws(write, stdin_rx) => { }
+            _ = ws_to_stdout(read) => { }
+            _ = exit_signal() => { println!("exiting");  }
+        }
     }
+    else {
+        println!("failed to connect");
+    }
+
+    window_handle.join().unwrap();
     
     println!("programm ended");
 
