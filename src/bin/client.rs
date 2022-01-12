@@ -1,5 +1,5 @@
 use std::time::{Duration, Instant};
-use std::thread::sleep;
+use std::mem;
 use futures::channel::mpsc::{UnboundedReceiver};
 use futures::{future, StreamExt, TryStreamExt, pin_mut};
 use futures::stream::{SplitSink, SplitStream};
@@ -68,8 +68,10 @@ async fn exit_signal() {
     tokio::signal::ctrl_c().await.expect("signal error");
 }
 
-fn window_loop() {
-    let mut buffer: Vec<u32> = vec![0; WIDTH * HEIGHT];
+fn window_loop(wbuffer: Arc<Mutex<Vec<u32>>>) {
+    //let mut buffer: Vec<u32> = vec![0; WIDTH * HEIGHT];
+    let mut b = wbuffer.lock().unwrap();
+
 
     let mut window = Window::new(
         "Test - ESC to exit",
@@ -85,33 +87,34 @@ fn window_loop() {
     window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        for i in buffer.iter_mut() {
-            *i = 0; // write something more funny here!
-        }
-
         // We unwrap here as we want this code to exit if it fails. Real applications may want to handle this in a different way
         window
-            .update_with_buffer(&buffer, WIDTH, HEIGHT)
+            .update_with_buffer(& *b, WIDTH, HEIGHT)
             .unwrap();
     }
 }
 
-fn render_loop() {
-    let mut buffer: Vec<u32> = vec![0; WIDTH * HEIGHT];
-    let now = Instant::now();
+fn render_loop(wbuffer: Arc<Mutex<Vec<u32>>>) {
+    let mut buffer: Vec<u32> = vec![0xFF000000; WIDTH * HEIGHT];
+    let mut now = Instant::now();
     let dur = Duration::from_millis(32);
 
-    for y in 75..100 {
-        for x in 275..300 {
-            buffer[(y * WIDTH) + x] = 0xFF000000;
+    loop {
+        // if time has passed render to buffer
+        if  now.elapsed() >= dur {
+            println!("looped");
+
+            for y in 75..100 {
+                for x in 275..300 {
+                    buffer[(y * WIDTH) + x] = 0xFF000000;
+                }
+            }
+
+            let mut b = wbuffer.lock().unwrap();
+            //mem::swap(&mut *b, &mut buffer);
+            *b = buffer.clone();
+            now = Instant::now();
         }
-    }
-
-    if now.elapsed() >= dur {
-        
-    }
-    else {
-
     }
 
 }
@@ -120,8 +123,12 @@ fn render_loop() {
 async fn main() -> Result<()> {
    
     let window_buffer: Arc<Mutex<Vec<u32>>> = Arc::new(Mutex::new(vec![0; WIDTH * HEIGHT]));
+    let w = window_buffer.clone();
     // initialize window thread
-    let window_handle = std::thread::spawn(move || window_loop());
+    let window_handle = std::thread::spawn(move || window_loop(w));
+
+    let r = window_buffer.clone();
+    let render_handle = std::thread::spawn(move || render_loop(r));
 
     let url = url::Url::parse("ws:////127.0.0.1:8080").unwrap();
     println!("server url: {}", url);
