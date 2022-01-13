@@ -68,7 +68,7 @@ async fn exit_signal() {
     tokio::signal::ctrl_c().await.expect("signal error");
 }
 
-fn window_loop(wbuffer_rx: Receiver<Vec<u32>>) {
+fn window_loop(wbuffer_rx: Receiver<Vec<u32>>, input_tx: Sender<Key>) {
     let mut buffer: Vec<u32> = vec![0; WIDTH * HEIGHT];
 
     let mut window = Window::new(
@@ -84,12 +84,19 @@ fn window_loop(wbuffer_rx: Receiver<Vec<u32>>) {
     // Limit to max ~60 fps update rate
     window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
 
-    while window.is_open() && !window.is_key_down(Key::Escape) {
-        //println!("window looped");
-
+    while window.is_open() && !window.is_key_down(Key::Escape) {        
+        // update frame buffer if rendered
         while let Ok(b) = wbuffer_rx.try_recv() {
             let _  = mem::replace(&mut buffer, b);
         }
+
+        window.get_keys().iter().for_each(|key| match key {
+            Key::W => { let _ = input_tx.send(*key); },
+            Key::S => { let _ = input_tx.send(*key); },
+            Key::A => { let _ = input_tx.send(*key); },
+            Key::D => { let _ = input_tx.send(*key); },
+            _ => { },
+        });
         
         window
             .update_with_buffer(&buffer, WIDTH, HEIGHT)
@@ -97,19 +104,23 @@ fn window_loop(wbuffer_rx: Receiver<Vec<u32>>) {
     }
 }
 
-fn render_loop(wbuffer_tx: Sender<Vec<u32>>) {
+fn render_loop(wbuffer_tx: Sender<Vec<u32>>, input_rx: Receiver<Key>) {
     let mut buffer: Vec<u32> = vec![0; WIDTH * HEIGHT];
     let mut now = Instant::now();
     let dur = Duration::from_millis(32);
-    let mut color: u32 = 0;
+
     loop {
         // if time has passed render to buffer
         if  now.elapsed() >= dur {
             //println!("render looped");
             
-            color = 0x0000FFFF;
+            for y in 75..100 {
+                for x in 275..300 {
+                    buffer[(y * WIDTH) + x] = 0x00FF00;
+                }
+            }
 
-            let _ = wbuffer_tx.send(vec![color; WIDTH * HEIGHT]);
+            let _ = wbuffer_tx.send(buffer.clone());
             now = Instant::now();
         }
     }
@@ -120,10 +131,11 @@ fn render_loop(wbuffer_tx: Sender<Vec<u32>>) {
 async fn main() -> Result<()> {
    
     let (fb_sender, fb_receiver) = channel();
+    let (input_sender, input_reciever) = channel();
 
     // initialize window thread
-    let window_handle = std::thread::spawn(move || window_loop(fb_receiver));
-    let render_handle = std::thread::spawn(move || render_loop(fb_sender));
+    let window_handle = std::thread::spawn(move || window_loop(fb_receiver, input_sender));
+    let render_handle = std::thread::spawn(move || render_loop(fb_sender, input_reciever));
 
     let url = url::Url::parse("ws:////127.0.0.1:8080").unwrap();
     println!("server url: {}", url);
