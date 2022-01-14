@@ -116,11 +116,11 @@ fn render_loop(wbuffer_tx: Sender<Vec<u32>>, input_rx: Receiver<Key>) {
         // if time has passed render to buffer
         if  now.elapsed() >= dur {
             
-            buffer.clear();
+            buffer.iter_mut().map(|x| *x = 0).count();
             
             while let Ok(key) = input_rx.try_recv() {
                 match key {
-                    Key::W => { y_pos += 2; if y_pos >= HEIGHT { y_pos = 0; }  println!("W incremented: {y_pos}") },
+                    Key::W => { y_pos += 2; if y_pos >= HEIGHT { y_pos = 0; } },
                     Key::S => { y_pos = y_pos.wrapping_sub(2); if y_pos >= HEIGHT { y_pos = 0; } },
                     Key::A => { x_pos += 2;  if x_pos >= WIDTH { x_pos = 0; }},
                     Key::D => { x_pos = x_pos.wrapping_sub(2);  if x_pos >= WIDTH { x_pos = 0; }},
