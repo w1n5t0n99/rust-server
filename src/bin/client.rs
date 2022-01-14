@@ -109,14 +109,34 @@ fn render_loop(wbuffer_tx: Sender<Vec<u32>>, input_rx: Receiver<Key>) {
     let mut now = Instant::now();
     let dur = Duration::from_millis(32);
 
+    let mut x_pos: usize = 275;
+    let mut y_pos: usize = 75;
+
     loop {
         // if time has passed render to buffer
         if  now.elapsed() >= dur {
-            //println!("render looped");
             
-            for y in 75..100 {
-                for x in 275..300 {
-                    buffer[(y * WIDTH) + x] = 0x00FF00;
+            buffer.clear();
+            
+            while let Ok(key) = input_rx.try_recv() {
+                match key {
+                    Key::W => { y_pos += 2; if y_pos >= HEIGHT { y_pos = 0; }  println!("W incremented: {y_pos}") },
+                    Key::S => { y_pos = y_pos.wrapping_sub(2); if y_pos >= HEIGHT { y_pos = 0; } },
+                    Key::A => { x_pos += 2;  if x_pos >= WIDTH { x_pos = 0; }},
+                    Key::D => { x_pos = x_pos.wrapping_sub(2);  if x_pos >= WIDTH { x_pos = 0; }},
+                    _ => { }
+                }
+            }
+
+            let x_pos_end = if (x_pos + 25) >= WIDTH { WIDTH - 1 } else { x_pos + 25 };
+            let y_pos_end = if (y_pos + 25) >= HEIGHT { HEIGHT - 1 } else { y_pos + 25 };
+            
+            for y in 0..(HEIGHT-1) {
+                for x in 0..(WIDTH-1) {
+
+                    if x >= x_pos && x <= x_pos_end && y >= y_pos && y <= y_pos_end {
+                        buffer[(y * WIDTH) + x] = 0x00FF00;
+                    }
                 }
             }
 
