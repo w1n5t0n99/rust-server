@@ -1,19 +1,14 @@
-use std::collections::HashMap;
-use std::os::windows::process;
-use std::str::EncodeUtf16;
-use std::sync::{Arc, RwLock, Mutex};
+use std::env;
 use futures::sink::SinkExt;
 use futures::{future, StreamExt, TryStreamExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::tungstenite::Message;
 use serde::{Serialize, Deserialize};
-
+use log::info;
 use anyhow::Result;
 
-use rust_server::types::{EntityCounter, Entities, Entity, Counter, Event};
-
 //===============================================================
-
+/*
 fn process_event(msg: Message) -> Result<Event> {
     match msg {
         Message::Text(txt) => {
@@ -55,80 +50,42 @@ async fn process_socket(socket: TcpStream, counter: EntityCounter) -> Result<()>
         }
     }
 }
+*/
 
-async fn exit_signal() {
-    tokio::signal::ctrl_c().await.expect("signal error");
-}
-
-async fn connection_handler(listener: TcpListener, counter: EntityCounter) {
-    loop {
-        match listener.accept().await {
-            Ok((socket, _addr)) => { tokio::spawn( process_socket(socket, counter.clone())); },
-            Err(e) => println!("couldn't get client: {:?}", e),
-        }
-    }
-}
+//===================================================================
+//===================================================================
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let _ = env_logger::try_init();
+    let addr = env::args().nth(1).unwrap_or_else(|| "127.0.0.1:8080".to_string());
 
-     // Create the event loop and TCP listener we'll accept connections on.
-    let server_listener = TcpListener::bind("127.0.0.1:8080").await?;
+    // Create the event loop and TCP listener we'll accept connections on.
+    let try_socket = TcpListener::bind(&addr).await;
+    let listener = try_socket.expect("Failed to bind");
+    info!("Listening on: {}", addr);
 
-    // Hashmap to store a sink value with an id key
-    // A sink is used to send data to an open client connection
-    //let connections = Arc::new(RwLock::new(HashMap::new()));
-    // Hashmap of id:entity pairs. This is basically the game state
-    let entities: Arc<Mutex<HashMap<u32, Entity>>> = Arc::new(Mutex::new(HashMap::new()));
-    // Used to assign a unique id to each new player
-    let counter = Arc::new(Mutex::new(Counter::new()));
-
-
-    tokio::select! {
-        _ = connection_handler(server_listener, counter.clone()) => {
-            println!("Server exiting");
-        }
-
-        _ = exit_signal() => {
-            println!("Got it... exiting");
-        }
+    while let Ok((stream, _)) = listener.accept().await {
+        tokio::spawn(accept_connection(stream));
     }
-    
+
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+async fn accept_connection(stream: TcpStream) {
+    let addr = stream.peer_addr().expect("connected streams should have a peer address");
+    info!("Peer address: {}", addr);
 
-    #[test]
-    fn test_event_serialization() {
-        let e = Event::Chat("hello world".to_string());
-        let e_json = serde_json::to_string(&e).unwrap();
-        let msg = Message::Text(e_json);
+    let ws_stream = tokio_tungstenite::accept_async(stream)
+        .await
+        .expect("Error during the websocket handshake occurred");
 
-        let msg1 = msg.clone();
-        
-        match msg1 {
-            Message::Text(txt) => {
-                let e1: Event = serde_json::from_str(txt.as_str()).unwrap();
-                match e1 {
-                    Event::Chat(c) => {
-                        assert_eq!(c, "hello world");
-                    }
+    info!("New WebSocket connection: {}", addr);
 
-                    _ => {
-                        panic!("event serialization failed");                        
-                    }
-                }
-
-            }
-
-            _ => {
-                panic!("event serialization failed");   
-             }
-        }
-
-    }
+    let (write, read) = ws_stream.split();
+    // We should not forward messages other than text or binary.
+    read.try_filter(|msg| future::ready(msg.is_text() || msg.is_binary()))
+        .forward(write)
+        .await
+        .expect("Failed to forward messages")
 }
-
