@@ -1,29 +1,30 @@
-use std::{time::{Duration, Instant}};
-use futures::stream::SplitStream;
-//use std::sync::mpsc::{channel, Sender, Receiver};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+//! A simple example of hooking up stdin/stdout to a WebSocket stream.
+//!
+//! This example will connect to a server specified in the argument list and
+//! then forward all data read on stdin to the server, printing out all data
+//! received on stdout.
+//!
+//! Note that this is not currently optimized for performance, especially around
+//! buffer management. Rather it's intended to show an example of working with a
+//! client.
+//!
+//! You can use this example together with the `server` example.
 
-//use tokio::sync::{broadcast};
-//use tokio::sync::mpsc;
-use futures_util::{future, pin_mut, StreamExt};
-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message, WebSocketStream, MaybeTlsStream};
-use anyhow::Result;
-use tracing::{info_span, Instrument};
 use std::env;
 
-type MsgUnboundedReciever = futures::channel::mpsc::UnboundedReceiver<Message>;
-type MsgUnboundedSender = futures::channel::mpsc::UnboundedSender<Message>;
+use futures_util::{future, pin_mut, StreamExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
 #[tokio::main]
 async fn main() {
     let connect_addr =
         env::args().nth(1).unwrap_or_else(|| panic!("this program requires at least one argument"));
 
-    let url = url::Url::parse(&connect_addr).unwrap();
+   // let url = url::Url::parse(&connect_addr).unwrap();
+   let url = url::Url::parse("ws:////127.0.0.1:8080").unwrap();
 
-    let (stdin_tx, stdin_rx) = futures::channel::mpsc::unbounded();
-
+    let (stdin_tx, stdin_rx) = futures_channel::mpsc::unbounded();
     tokio::spawn(read_stdin(stdin_tx));
 
     let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
@@ -43,37 +44,16 @@ async fn main() {
     future::select(stdin_to_ws, ws_to_stdout).await;
 }
 
-
-async fn handle_incoming_messages(read: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>) {
-    read.for_each(|message| async {
-        let data = message.unwrap().into_data();
-        tokio::io::stdout().write_all(&data).await.unwrap();
-    });
-}
-
-
-#[tracing::instrument(
-    name = "Read stdin task",
-    skip(tx),
-)]
-async fn read_stdin(tx: MsgUnboundedSender) {
-
+// Our helper method which will read data from stdin and send it along the
+// sender provided.
+async fn read_stdin(tx: futures_channel::mpsc::UnboundedSender<Message>) {
     let mut stdin = tokio::io::stdin();
     loop {
-        let span = info_span!("stdin read");
-
         let mut buf = vec![0; 1024];
-        let n = match stdin.read(&mut buf)
-            .instrument(span)
-            .await {
-            Err(e) => { 
-                tracing::error!("Failed to read stdin: {:?}",e);
-                break;
-            },
-            Ok(0) => break,
+        let n = match stdin.read(&mut buf).await {
+            Err(_) | Ok(0) => break,
             Ok(n) => n,
         };
-
         buf.truncate(n);
         tx.unbounded_send(Message::binary(buf)).unwrap();
     }

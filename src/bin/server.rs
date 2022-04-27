@@ -1,81 +1,60 @@
 use std::env;
+use std::net::SocketAddr;
 use futures::sink::SinkExt;
 use futures::{future, StreamExt, TryStreamExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::tungstenite::Message;
 use serde::{Serialize, Deserialize};
-use log::info;
-use anyhow::Result;
 
-//===============================================================
-/*
-fn process_event(msg: Message) -> Result<Event> {
-    match msg {
-        Message::Text(txt) => {
-            let event: Event = serde_json::from_str(&txt)?;
-            Ok(event)
-        }
-        _ => Err(tokio_tungstenite::tungstenite::Error::Utf8.into())
-    }
-}
+use tracing::instrument::WithSubscriber;
+use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
+use tracing::{instrument, Instrument};
+use tracing::{info, info_span};
+use tracing_subscriber::Registry;
+use tracing_subscriber::layer::SubscriberExt;
 
-async fn process_socket(socket: TcpStream, counter: EntityCounter) -> Result<()> {
-    let ws_stream = tokio_tungstenite::accept_async(socket)
-        .await?;
+type MsgUnboundedReciever = futures::channel::mpsc::UnboundedReceiver<Message>;
+type MsgUnboundedSender = futures::channel::mpsc::UnboundedSender<Message>;
 
-    let (mut write, read) = ws_stream.split();
-
-    // register client
-    let reg_event = Event::ClientRegistered(counter.lock().unwrap().next());
-    let reg_event_json = serde_json::to_string(&reg_event).unwrap();
-    
-    write.send(Message::Text(reg_event_json)).await?;
-
-    // loop update client
-    let res = read.try_filter(|msg| future::ready(msg.is_text() || msg.is_binary()))
-        .then(|msg| {
-            future::ready(msg.and_then(|m| { println!("message: {}", m); Ok(m) }))
-        })
-        .forward(write)
-        .await;
-    
-    match res {
-        Ok(_) => {
-            println!("connection closed: no error");
-            Ok(())
-        }
-        Err(err) => {
-            println!("connection closed: ERROR - {}", err);
-            Err(err.into())
-        }
-    }
-}
-*/
 
 //===================================================================
 //===================================================================
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    let _ = env_logger::try_init();
-    let addr = env::args().nth(1).unwrap_or_else(|| "127.0.0.1:8080".to_string());
+async fn main() {
+    // initialize tracing
+    let formatting_layer = BunyanFormattingLayer::new("tracing_demo".into(), std::io::stdout);
+    let subscriber = Registry::default()
+        .with(JsonStorageLayer)
+        .with(formatting_layer);
 
+    /*
+    let file_appender = tracing_appender::rolling::hourly("/logs", "prefix.log");
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+
+    tracing_subscriber::fmt()
+       .with_writer(non_blocking)
+       .init();
+    */
+
+    tracing::subscriber::set_global_default(subscriber).unwrap();
+
+    let addr = env::args().nth(1).unwrap_or_else(|| "127.0.0.1:8080".to_string());
     // Create the event loop and TCP listener we'll accept connections on.
-    let try_socket = TcpListener::bind(&addr).await;
-    let listener = try_socket.expect("Failed to bind");
+    let listener = TcpListener::bind(&addr)
+        .await
+        .expect("Failed to bind");
+
     info!("Listening on: {}", addr);
 
-    while let Ok((stream, _)) = listener.accept().await {
-        tokio::spawn(accept_connection(stream));
+    while let Ok((stream, addr)) = listener.accept().await {
+        tokio::spawn(accept_connection(stream, addr));
     }
 
-    Ok(())
 }
 
-async fn accept_connection(stream: TcpStream) {
-    let addr = stream.peer_addr().expect("connected streams should have a peer address");
-    info!("Peer address: {}", addr);
-
+#[instrument]
+async fn accept_connection(stream: TcpStream, addr: SocketAddr) {
     let ws_stream = tokio_tungstenite::accept_async(stream)
         .await
         .expect("Error during the websocket handshake occurred");
@@ -84,8 +63,16 @@ async fn accept_connection(stream: TcpStream) {
 
     let (write, read) = ws_stream.split();
     // We should not forward messages other than text or binary.
-    read.try_filter(|msg| future::ready(msg.is_text() || msg.is_binary()))
+    read.try_filter(|msg| {
+            match msg.to_text() {
+                Ok(msg) => info!("message: {}", msg),
+                Err(_) => info!("non text message"),
+            }
+
+            future::ready(msg.is_text() || msg.is_binary())
+        })
         .forward(write)
+        .instrument(info_span!("forward message"))
         .await
         .expect("Failed to forward messages")
 }
